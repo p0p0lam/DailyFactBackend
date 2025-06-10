@@ -1,0 +1,1 @@
+Give me one interesting and true fact on a random topic in ISO 639 language "%%LANGUAGE%%". The fact must be from the real world, not fictional. Return the result in JSON format with three fields: \"topic\" (a general subject like Biology, Space, History, etc.), \"title\" (a short name for the fact), and \"fact\" (a concise but informative explanation).\n

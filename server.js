@@ -4,6 +4,7 @@
 // This should be at the VERY TOP of your file
 require('dotenv').config();
 
+const fs = require('fs');
 const express = require('express');
 const fetch = require('node-fetch');
 
@@ -27,7 +28,9 @@ app.post('/getRandomFact', async (req, res) => {
   }
 
   try {
-    
+    let systemPrompt = fs.readFileSync('prompts/system-prompt.md', 'utf8');
+    let userPrompt = fs.readFileSync('prompts/user-prompt.md', 'utf8');
+    systemPrompt = systemPrompt.replace('%%LANGUAGE%%', language);
     const openRouterResponse = await fetch("https://openrouter.ai/api/v1/chat/completions", {
       method: "POST",
       headers: {
@@ -41,23 +44,23 @@ app.post('/getRandomFact', async (req, res) => {
         "messages": [
           {
             "role": "system",
-            "content": "You are a helpful and knowledgeable assistant. You generate one real, interesting, and well-explained fact on a random topic each time you're prompted. All facts must be true and based on the real world (no fiction or speculation). Your response must be in valid JSON format with the following keys: \"topic\", \"title\", and \"fact\". Keep the explanation informative and concise."
+            "content": systemPrompt
           },
           {
             "role": "user",
-            "content": `Give me one interesting and true fact on a random topic in ISO 639 language "${language}". The fact must be from the real world, not fictional. Return the result in JSON format with three fields: \"topic\" (a general subject like Biology, Space, History, etc.), \"title\" (a short name for the fact), and \"fact\" (a concise but informative explanation).\n`
+            "content": userPrompt
           }
         ]
       }),
     });
 
     if (!openRouterResponse.ok) {
-        const errorBody = await openRouterResponse.text();
-        console.error('Error from OpenRouter API:', openRouterResponse.status, errorBody);
-        return res.status(openRouterResponse.status).json({
-            error: 'Error when requesting from OpenRouter API',
-            details: errorBody
-        });
+      const errorBody = await openRouterResponse.text();
+      console.error('Error from OpenRouter API:', openRouterResponse.status, errorBody);
+      return res.status(openRouterResponse.status).json({
+        error: 'Error when requesting from OpenRouter API',
+        details: errorBody
+      });
     }
 
     const body = await openRouterResponse.json();
