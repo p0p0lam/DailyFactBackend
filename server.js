@@ -16,12 +16,13 @@ const PORT = process.env.PORT || 8080;
 // This line now automatically gets the key from your .env file
 const OPENROUTER_API_KEY = process.env.OPENROUTER_API_KEY;
 const MONGODB_URI = process.env.MONGODB_URI;
+//const GOOGLE_APPLICATION_CREDENTIALS = process.env.GOOGLE_APPLICATION_CREDENTIALS;
 app.use(express.json());
 
-// --- NEW --- Initialize Firebase Admin SDK
+
 try {
   admin.initializeApp({
-    // You can leave this empty if GOOGLE_APPLICATION_CREDENTIALS is set
+
   });
   console.log("Firebase Admin SDK initialized successfully.");
 } catch (error) {
@@ -88,19 +89,40 @@ async function sendPushNotification(token, data = {}) {
     }
 }
 
+/**
+ * Wrap (encrypt) an AES key using an RSA public key (OAEP SHA-256).
+ * @param {string} aesKeyHex - The AES key as a hex string.
+ * @param {string} publicKeyPem - The RSA public key in PEM format.
+ * @returns {string} - The wrapped AES key as a Base64 string.
+ */
+function wrapAesKey(aesKeyHex, publicKeyPem) {
+    const aesKeyBuffer = Buffer.from(aesKeyHex, 'hex');
+    const wrappedKey = crypto.publicEncrypt(
+        {
+            key: publicKeyPem,
+            padding: crypto.constants.RSA_PKCS1_OAEP_PADDING,
+            oaepHash: 'sha256', // Main hash
+            mgf1Hash: 'sha1'    // MGF1 hash MUST BE sha1 for compatibility
+        },
+        aesKeyBuffer
+    );
+    return wrappedKey.toString('base64');
+}
+
 app.post('/pushToken', async(req, res) => {
   console.log('Received request for /pushToken');
   // 1. Extract push_token and user_id from the request body
-  const { push_token, user_id } = req.body;
+  const { push_token, user_id, public_key_pem } = req.body;
 
   // 2. Validate the incoming data
-  if (!push_token || !user_id) {
-    console.error('Validation Error: Missing push_token or user_id.');
+  if (!push_token || !user_id || !public_key_pem) {
+    console.error('Validation Error: Missing required fields in request body.');
     return res.status(400).json({ error: 'Invalid Request".' });
   }
 
   try {
     const aesKey = crypto.randomBytes(32).toString('hex');
+    const wrappedKey = wrapAesKey(aesKey, public_key_pem);
     console.log(`Generated new AES key for user_id '${user_id}'.`);
     // 3. Access the 'pushTokens' collection
     const pushTokensCollection = db.collection('pushTokens');
@@ -139,7 +161,7 @@ app.post('/pushToken', async(req, res) => {
     }
     
     // --- NEW: Use the extracted function to send the notification ---
-    const pushResult = await sendPushNotification(
+    /* const pushResult = await sendPushNotification(
         push_token,
         { secret_key: aesKey } // Pass the key in the data payload
     );
@@ -151,12 +173,13 @@ app.post('/pushToken', async(req, res) => {
         // The error is already logged by the sendPushNotification function.
         // We just set a user-friendly status message here.
         pushStatusMessage = 'Warning: Could not send setup notification (token may be invalid).';
-    }
+    } */
 
     // Send a consolidated success response back to the client
     res.status(200).json({
-      message: `${dbMessage} ${pushStatusMessage}`,
+      message: `${dbMessage}`,
       user_id: user_id,
+      wrapped_aes_key: wrappedKey // Return the wrapped AES key
     });
 
   } catch (error) {
@@ -184,7 +207,7 @@ app.post('/getRandomFact', async (req, res) => {
   try {
     let systemPrompt = fs.readFileSync('prompts/system-prompt.md', 'utf8');
     let userPrompt = fs.readFileSync('prompts/user-prompt.md', 'utf8');
-    userPrompt = systemPrompt.replace('%%LANGUAGE%%', language);
+    userPrompt = userPrompt.replace('%%LANGUAGE%%', language);
     const openRouterResponse = await fetch("https://openrouter.ai/api/v1/chat/completions", {
       method: "POST",
       headers: {
