@@ -9,6 +9,7 @@
   "dependencies": {
     "dotenv": "^16.5.0",
     "express": "^4.17.3",
+    "mongodb": "^5.9.2",
     "node-fetch": "^2.7.0"
   }
 }
