@@ -3,10 +3,11 @@
 // Load environment variables from .env file
 // This should be at the VERY TOP of your file
 require('dotenv').config();
-const crypto = require('crypto');
+//const crypto = require('crypto');
 const fs = require('fs');
 const express = require('express');
 const fetch = require('node-fetch');
+const forge = require('node-forge');
 // --- NEW --- Import MongoClient from the 'mongodb' package
 const { MongoClient, ServerApiVersion } = require('mongodb');
 const admin = require('firebase-admin');
@@ -90,23 +91,24 @@ async function sendPushNotification(token, data = {}) {
 }
 
 /**
- * Wrap (encrypt) an AES key using an RSA public key (OAEP SHA-256).
+ * Wrap (encrypt) an AES key using an RSA public key (OAEP SHA-256) with node-forge.
  * @param {string} aesKeyHex - The AES key as a hex string.
  * @param {string} publicKeyPem - The RSA public key in PEM format.
  * @returns {string} - The wrapped AES key as a Base64 string.
  */
 function wrapAesKey(aesKeyHex, publicKeyPem) {
+    
     const aesKeyBuffer = Buffer.from(aesKeyHex, 'hex');
-    const wrappedKey = crypto.publicEncrypt(
-        {
-            key: publicKeyPem,
-            padding: crypto.constants.RSA_PKCS1_OAEP_PADDING,
-            oaepHash: 'sha256', // Main hash
-            mgf1Hash: 'sha1'    // MGF1 hash MUST BE sha1 for compatibility
-        },
-        aesKeyBuffer
-    );
-    return wrappedKey.toString('base64');
+    const aesKeyBinary = aesKeyBuffer.toString('binary');
+
+    const publicKey = forge.pki.publicKeyFromPem(publicKeyPem);
+    const encrypted = publicKey.encrypt(aesKeyBinary, 'RSA-OAEP', {
+        md: forge.md.sha256.create(),
+        mgf1: {
+            md: forge.md.sha1.create()
+        }
+    });
+    return forge.util.encode64(encrypted);
 }
 
 app.post('/pushToken', async(req, res) => {
@@ -121,6 +123,7 @@ app.post('/pushToken', async(req, res) => {
   }
 
   try {
+    const aesKeyBytes = forge.random.getBytesSync(32);
     const aesKey = crypto.randomBytes(32).toString('hex');
     const wrappedKey = wrapAesKey(aesKey, public_key_pem);
     console.log(`Generated new AES key for user_id '${user_id}'.`);
