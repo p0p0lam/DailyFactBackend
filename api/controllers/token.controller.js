@@ -1,7 +1,7 @@
 // api/controllers/token.controller.js
 const crypto = require('crypto');
 const { getDb } = require('../../config/database');
-const { wrapAesKey } = require('../../services/crypto.service');
+const { wrapAesKey, generateRandomAesKey } = require('../../services/crypto.service');
 const { sendPushNotification } = require('../../services/push.service');
 
 exports.registerPushToken = async (req, res) => {
@@ -12,7 +12,7 @@ exports.registerPushToken = async (req, res) => {
   }
 
   try {
-    const aesKey = crypto.randomBytes(32).toString('hex');
+    const aesKey = generateRandomAesKey();
     const wrappedKey = wrapAesKey(aesKey, public_key_pem);
     console.log(`Generated new AES key for user_id '${user_id}'.`);
 
@@ -24,6 +24,7 @@ exports.registerPushToken = async (req, res) => {
       $set: {
         push_token: push_token,
         aes_key: aesKey,
+        public_key_pem: public_key_pem,
         last_updated: new Date(),
       },
       $setOnInsert: { user_id: user_id }
