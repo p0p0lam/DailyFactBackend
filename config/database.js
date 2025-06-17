@@ -13,13 +13,14 @@ async function connectToDatabase() {
     process.exit(1);
   }
 
-  client = new MongoClient(MONGODB_URI, {
-    serverApi: {
-      version: ServerApiVersion.v1,
-      strict: true,
-      deprecationErrors: true,
-    }
-  });
+  // client = new MongoClient(MONGODB_URI, {
+  //   serverApi: {
+  //     version: ServerApiVersion.v1,
+  //     strict: true,
+  //     deprecationErrors: true,
+  //   }
+  // });
+  client = new MongoClient(MONGODB_URI);
 
   try {
     await client.connect();
