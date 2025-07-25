@@ -4,3 +4,6 @@ Web.config
 *.http
 daily-fact-app-6438852b9257.json
 .aider*
+dailyfact.sqlite
+*.sqlite
+*.sqlite-journal

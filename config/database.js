@@ -1,54 +1,52 @@
-const { MongoClient, ServerApiVersion } = require('mongodb');
+const sqlite3 = require('sqlite3').verbose();
+const path = require('path');
+const SQLITE_DB_PATH = process.env.SQLITE_DB_PATH;
 
-const MONGODB_URI = process.env.MONGODB_URI;
 let db;
-let client;
+
 /**
- * Connects to the MongoDB database using the URI from environment variables.
- * Exits the process if the connection fails or if MONGODB_URI is not defined.
+ * Connects to the SQLite database using the path from environment variables.
+ * Exits the process if the connection fails or if SQLITE_DB_PATH is not defined.
  */
-async function connectToDatabase() {
-  if (!MONGODB_URI) {
-    console.error('FATAL ERROR: MONGODB_URI is not defined in your .env file.');
-    process.exit(1);
-  }
-
-  // client = new MongoClient(MONGODB_URI, {
-  //   serverApi: {
-  //     version: ServerApiVersion.v1,
-  //     strict: true,
-  //     deprecationErrors: true,
-  //   }
-  // });
-  client = new MongoClient(MONGODB_URI);
-
-  try {
-    await client.connect();
-    db = client.db("dailyfact"); // Or your specific DB name
-    console.log("Successfully connected to MongoDB.");
-  } catch (err) {
-    console.error("Failed to connect to MongoDB", err);
-    process.exit(1);
-  }
+function connectToDatabase() {
+    if (!SQLITE_DB_PATH) {
+        console.error('FATAL ERROR: SQLITE_DB_PATH is not defined in your .env file.');
+        process.exit(1);
+    }
+    const dbPath = path.resolve(__dirname, '..', SQLITE_DB_PATH);
+    db = new sqlite3.Database(dbPath, (err) => {
+        if (err) {
+            console.error("Failed to connect to SQLite database:", err);
+            process.exit(1);
+        } else {
+            console.log("Successfully connected to SQLite database.");
+        }
+    });
 }
 
-// Function to get the database instance
+/**
+ * Returns the database instance.
+ */
 const getDb = () => {
-  if (!db) {
-    throw new Error('Database not initialized! Call connectToDatabase first.');
-  }
-  return db;
+    if (!db) {
+        throw new Error('Database not initialized! Call connectToDatabase first.');
+    }
+    return db;
 };
 
-async function closeDatabaseConnection() {
-  if (client) {
-    try {
-      await client.close();
-      console.log("Successfully closed MongoDB connection.");
-    } catch (err) {
-      console.error("Error closing MongoDB connection:", err);
+/**
+ * Closes the connection to the SQLite database.
+ */
+function closeDatabaseConnection() {
+    if (db) {
+        db.close((err) => {
+            if (err) {
+                console.error("Error closing SQLite connection:", err);
+            } else {
+                console.log("Successfully closed SQLite connection.");
+            }
+        });
     }
-  }
 }
 
 module.exports = { connectToDatabase, getDb, closeDatabaseConnection };
