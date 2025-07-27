@@ -1,9 +1,8 @@
-// api/controllers/fact.controller.js
 const fs = require('fs');
 const path = require('path');
 const fetch = require('node-fetch');
 const { getDb } = require('../../config/database');
-const { decryptData, generateRandomAesKey } = require('../../services/crypto.service');
+const { decryptData, generateRandomAesKey, wrapAesKey } = require('../../services/crypto.service');
 const { sendPushNotification } = require('../../services/push.service');
 
 const OPENROUTER_API_KEY = process.env.OPENROUTER_API_KEY;
@@ -14,9 +13,9 @@ const userPromptPath = path.join(__dirname, '../../prompts/user-prompt.md');
 
 exports.getRandomFact = async (req, res) => {
     const language = (req.headers['accept-language'] || "en").split(',')[0].split(';')[0];
-    //extract authorization header
+    // extract authorization header
     const authHeader = req.headers.authorization || '';
-    //extract X-User-Id header
+    // extract X-User-Id header
     const userId = req.headers['x-user-id'] || '';
     // if authHeader is empty or userId is empty, log a warning and return 401 response
     if (!authHeader || !userId) {
@@ -25,59 +24,69 @@ exports.getRandomFact = async (req, res) => {
     }
     try {
         const db = getDb();
-        const pushTokensCollection = db.collection('pushTokens');
-        const userDoc = await pushTokensCollection.findOne({ user_id: userId });
-
-        // 3. Handle the case where the user is not found
+        // Promisify the SELECT query
+        const userDoc = await new Promise((resolve, reject) => {
+            const sql = `SELECT * FROM pushTokens WHERE user_id = ?`;
+            db.get(sql, [userId], (err, row) => {
+                if (err) return reject(err);
+                resolve(row);
+            });
+        });
+        
+        // Handle the case where the user is not found
         if (!userDoc) {
             console.warn(`User not found in DB for user_id: ${userId}`);
             return res.status(401).json({ error: 'Unauthorized' });
         }
+        
         const aesKey = userDoc.aes_key;
         if (!aesKey) {
             console.error(`AES key missing for user_id: ${userId}`);
             return res.status(401).json({ error: 'Unauthorized' });
         }
+        
         // Decrypt the AES key using the provided auth header
         const timestamp = decryptData(authHeader, aesKey);
         if (!timestamp) {
             console.error(`Decryption failed for user_id: ${userId}`);
             return res.status(401).json({ error: 'Unauthorized' });
         }
+        
         // Check if the timestamp is valid (e.g., not expired)
         const currentTime = Date.now();
-        const last_updated = userDoc.last_updated
-        if (!last_updated || (currentTime - new Date(last_updated).getTime()) > 24 * 60 * 60 * 1000) {
+        const lastUpdated = userDoc.last_updated;
+        if (!lastUpdated || (currentTime - new Date(lastUpdated).getTime()) > 24 * 60 * 60 * 1000) {
             console.warn(`User data is outdated for user_id: ${userId}. Regenerating AES key.`);
-            // generate a new AES key and update the user document
+            // generate a new AES key and update the user row
             const newAesKey = generateRandomAesKey();
             const public_key_pem = userDoc.public_key_pem || '';
-            if(!public_key_pem) {
+            if (!public_key_pem) {
                 console.error(`Public key PEM is missing for user_id: ${userId}`);
                 return res.status(401).json({ error: 'Unauthorized' });
             }
             
             const wrappedKey = wrapAesKey(newAesKey, public_key_pem);
-            //update the user document with the new AES key
             console.log(`Updating user data for user_id: ${userId} with new AES key.`);
-            const updateResult = await pushTokensCollection.updateOne(
-                { user_id: userId },
-                {
-                    $set: {
-                        aes_key: newAesKey,
-                        last_updated: new Date(),
-                    }
-                }
-            );
-            if (updateResult.modifiedCount === 0) {
+            
+            // Promisify the update operation
+            const updateResult = await new Promise((resolve, reject) => {
+                const updateSql = `UPDATE pushTokens SET aes_key = ?, last_updated = ? WHERE user_id = ?`;
+                const newTimestamp = new Date().toISOString();
+                db.run(updateSql, [newAesKey, newTimestamp, userId], function(err) {
+                    if (err) return reject(err);
+                    resolve(this);
+                });
+            });
+            if (updateResult.changes === 0) {
                 console.error(`Failed to update user data for user_id: ${userId}`);
             }
-            sendPushNotification(userDoc.push_token, {secret_key: wrappedKey});
+            sendPushNotification(userDoc.push_token, { secret_key: wrappedKey });
         }
     } catch (error) {
         console.error('Error retrieving user data:', error);
         return res.status(500).json({ error: 'Server configuration error' });
     }
+    
     console.log(`Request for fact in language: ${language}`);
 
     if (!OPENROUTER_API_KEY) {
@@ -97,7 +106,8 @@ exports.getRandomFact = async (req, res) => {
                 "X-Title": "NodeJS Simple Fact API"
             },
             body: JSON.stringify({
-                model: "deepseek/deepseek-chat:free",
+                //model: "deepseek/deepseek-r1:free",
+                model: "deepseek/deepseek-chat-v3-0324:free",
                 messages: [{ role: "system", content: systemPrompt }, { role: "user", content: userPrompt }]
             }),
         });

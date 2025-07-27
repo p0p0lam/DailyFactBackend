@@ -20,6 +20,29 @@ function connectToDatabase() {
             process.exit(1);
         } else {
             console.log("Successfully connected to SQLite database.");
+            createPushTokensTable(); // Ensure the pushTokens table exists on startup.
+        }
+    });
+}
+
+/**
+ * Creates the pushTokens table if it does not already exist.
+ */
+function createPushTokensTable() {
+    const createTableSql = `
+      CREATE TABLE IF NOT EXISTS pushTokens (
+          user_id TEXT PRIMARY KEY,
+          push_token TEXT,
+          aes_key TEXT,
+          public_key_pem TEXT,
+          last_updated TEXT
+      );
+    `;
+    db.run(createTableSql, (err) => {
+        if (err) {
+            console.error("Error creating pushTokens table:", err);
+        } else {
+            console.log("pushTokens table verified/created successfully.");
         }
     });
 }

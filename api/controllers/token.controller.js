@@ -17,27 +17,31 @@ exports.registerPushToken = async (req, res) => {
     console.log(`Generated new AES key for user_id '${user_id}'.`);
 
     const db = getDb();
-    const pushTokensCollection = db.collection('pushTokens');
-    
-    const query = { user_id: user_id };
-    const update = {
-      $set: {
-        push_token: push_token,
-        aes_key: aesKey,
-        public_key_pem: public_key_pem,
-        last_updated: new Date(),
-      },
-      $setOnInsert: { user_id: user_id }
-    };
-    const options = { upsert: true };
-    const result = await pushTokensCollection.updateOne(query, update, options);
+    const now = new Date().toISOString();
 
-    let dbMessage = result.upsertedCount > 0 
-      ? 'Push token saved successfully for new user.' 
-      : 'Push token updated successfully.';
-    
-    console.log(`User '${user_id}': ${dbMessage}`);
-      
+        const sql = `
+            INSERT INTO pushTokens (user_id, push_token, aes_key, public_key_pem, last_updated)
+            VALUES (?, ?, ?, ?, ?)
+            ON CONFLICT(user_id) DO UPDATE SET
+                push_token = excluded.push_token,
+                aes_key = excluded.aes_key,
+                public_key_pem = excluded.public_key_pem,
+                last_updated = excluded.last_updated;
+        `;
+
+        // Wrapping the db run operation in a Promise to use async/await
+        await new Promise((resolve, reject) => {
+            db.run(sql, [user_id, push_token, aesKey, public_key_pem, now], function(err) {
+                if (err) {
+                    return reject(err);
+                }
+                resolve(this);
+            });
+        });
+
+        const dbMessage = 'Push token saved successfully.';
+        console.log(`User '${user_id}': ${dbMessage}`);
+     
     res.status(200).json({
       message: dbMessage,
       user_id: user_id,
